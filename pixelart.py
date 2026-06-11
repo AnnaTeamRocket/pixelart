@@ -1,14 +1,31 @@
 import tkinter as tk
 from tkinter import filedialog
 from PIL import Image, ImageTk
+import ctypes
+
+# Win32 Constants
+WS_EX_LAYERED = 0x00080000
+WS_EX_TRANSPARENT = 0x00000020
+GWL_EXSTYLE = -20
+
+def set_click_through(hwnd, enabled=True):
+    # Retrieve the extended style
+    style = ctypes.windll.user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
+    if enabled:
+        style = style | WS_EX_LAYERED | WS_EX_TRANSPARENT
+    else:
+        style = style & ~WS_EX_TRANSPARENT
+    # Apply the new style
+    ctypes.windll.user32.SetWindowLongW(hwnd, GWL_EXSTYLE, style)
 
 class OverlayApp:
     def __init__(self, root):
         self.root = root
         self.root.title("Overlay Controller")
-        self.root.geometry("300x500")
+        self.root.geometry("300x550")
         
         self.overlay = None
+        self.is_click_through = False
         self.mode = "Overlay"
         self.is_drag_enabled = True
         self.image_path = tk.StringVar()
@@ -32,10 +49,22 @@ class OverlayApp:
         tk.Button(root, text="Switch to Drag Overlay", command=lambda: self.set_mode("Overlay")).pack()
         
         self.lock_drag_btn = tk.Button(root, text="Dragging: Enabled", command=self.toggle_drag_lock)
-        self.lock_drag_btn.pack(pady=10)
+        self.lock_drag_btn.pack(pady=5)
         
         self.toggle_btn = tk.Button(root, text="Enable Overlay", command=self.toggle_overlay)
         self.toggle_btn.pack(pady=5)
+
+        self.ct_btn = tk.Button(root, text="Toggle Click-Through: OFF", command=self.toggle_ct_mode)
+        self.ct_btn.pack(pady=5)
+
+    def toggle_ct_mode(self):
+        if self.overlay and self.overlay.winfo_exists():
+            self.is_click_through = not self.is_click_through
+            # Use the robust handle retrieval that works for you
+            hwnd = ctypes.windll.user32.GetParent(self.overlay.winfo_id()) or self.overlay.winfo_id()
+            set_click_through(hwnd, self.is_click_through)
+            status = "ON" if self.is_click_through else "OFF"
+            self.ct_btn.config(text=f"Toggle Click-Through: {status}")
 
     def set_mode(self, mode):
         self.mode = mode
@@ -57,14 +86,14 @@ class OverlayApp:
         s = self.scale_val.get()
         if s >= 1: return s
         if s <= -1: return 1 / abs(s)
-        return 1 # Default for 0
+        return 1
 
     def start_move(self, event):
         if self.is_drag_enabled:
             self.drag_data = {"x": event.x, "y": event.y}
 
     def do_move(self, event):
-        if self.is_drag_enabled:
+        if self.is_drag_enabled and self.overlay and self.img_label:
             if self.mode == "Overlay":
                 new_x = self.overlay.winfo_x() + (event.x - self.drag_data["x"])
                 new_y = self.overlay.winfo_y() + (event.y - self.drag_data["y"])
@@ -102,6 +131,8 @@ class OverlayApp:
             self.img_label.bind("<B1-Motion>", self.do_move)
             
             self.toggle_btn.config(text="Disable Overlay")
+            self.is_click_through = False
+            self.ct_btn.config(text="Toggle Click-Through: OFF")
         else:
             self.overlay.destroy()
             self.overlay = None
